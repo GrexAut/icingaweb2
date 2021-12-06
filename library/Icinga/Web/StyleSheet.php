@@ -8,6 +8,7 @@ use Icinga\Application\Icinga;
 use Icinga\Application\Logger;
 use Icinga\Authentication\Auth;
 use Icinga\Exception\IcingaException;
+use Less_Environment;
 
 /**
  * Send CSS for Web 2 and all loaded modules to the client
@@ -207,6 +208,11 @@ class StyleSheet
         return $styleSheet;
     }
 
+    public function getModuleCss($name)
+    {
+
+    }
+
     /**
      * Render the stylesheet
      *
@@ -306,5 +312,11 @@ class StyleSheet
         }
 
         return null;
+    }
+
+    public static function getParser(Less_Environment $env = null)
+    {
+        $self = new static();
+        return $self->lessCompiler->getParser($env);
     }
 }

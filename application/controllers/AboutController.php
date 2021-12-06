@@ -9,6 +9,8 @@ use Icinga\Web\Controller;
 
 class AboutController extends Controller
 {
+    protected $requiresAuthentication = false;
+
     public function indexAction()
     {
         $this->view->version = Version::get();

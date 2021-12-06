@@ -6,6 +6,8 @@ namespace Icinga\Web;
 use Exception;
 use Icinga\Application\Logger;
 use Icinga\Util\LessParser;
+use Less_Environment;
+use Less_Parser;
 
 /**
  * Compile LESS into CSS
@@ -283,5 +285,17 @@ class LessCompiler
 
             return sprintf("%s\n%s\n\n\n%s", $e->getMessage(), $e->getTraceAsString(), $excerpt);
         }
+    }
+
+    public function getParser(Less_Environment $env = null)
+    {
+        $parser = new Less_Parser($env);
+        $parser->SetOptions($parser::$default_options);
+        $env->Init();
+        foreach ($this->lessFiles as $lessFile) {
+            $parser->parseFile($lessFile);
+        }
+
+        return $parser;
     }
 }
