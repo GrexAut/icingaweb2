@@ -106,6 +106,21 @@ class LessCompiler
     }
 
     /**
+     * Get all collected less files for the given module
+     *
+     * @return array
+     */
+    public function getModuleLessFiles($name)
+    {
+        return array_merge(
+            $this->moduleLessFiles[$name],
+            array_keys(array_filter($this->moduleRequires, function ($value) use ($name) {
+                return in_array($name, $value);
+            }))
+        );
+    }
+
+    /**
      * Add a LESS asset requirement
      *
      * @param   string  $moduleName
@@ -122,17 +137,21 @@ class LessCompiler
     /**
      * Get the list of LESS files added to the compiler
      *
+     * @param bool $onlyBase Whether to exclude all module less files
+     *
      * @return string[]
      */
-    public function getLessFiles()
+    public function getLessFiles($onlyBase = false)
     {
         $lessFiles = $this->lessFiles;
 
-        foreach ($this->moduleLessFiles as $moduleLessFiles) {
-            $lessFiles = array_merge($lessFiles, $moduleLessFiles);
-        }
+        if (! $onlyBase) {
+            foreach ($this->moduleLessFiles as $moduleLessFiles) {
+                $lessFiles = array_merge($lessFiles, $moduleLessFiles);
+            }
 
-        $lessFiles = array_merge($lessFiles, array_keys($this->moduleRequires));
+            $lessFiles = array_merge($lessFiles, array_keys($this->moduleRequires));
+        }
 
         if ($this->theme !== null) {
             $lessFiles[] = $this->theme;
@@ -287,15 +306,13 @@ class LessCompiler
         }
     }
 
-    public function getParser(Less_Environment $env = null)
+    /**
+     * Get less php parser
+     *
+     * @return LessParser
+     */
+    public function getParser()
     {
-        $parser = new Less_Parser($env);
-        $parser->SetOptions($parser::$default_options);
-        $env->Init();
-        foreach ($this->lessFiles as $lessFile) {
-            $parser->parseFile($lessFile);
-        }
-
-        return $parser;
+        return $this->lessc;
     }
 }
