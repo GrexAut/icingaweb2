@@ -125,6 +125,16 @@ class StyleSheet
     }
 
     /**
+     * Get the already initiated less compiler
+     *
+     * @return LessCompiler
+     */
+    public function getLessCompiler()
+    {
+        return $this->lessCompiler;
+    }
+
+    /**
      * Collect Web 2 and module LESS files and add them to the LESS compiler
      */
     protected function collect()
@@ -208,9 +218,46 @@ class StyleSheet
         return $styleSheet;
     }
 
-    public function getModuleCss($name)
+    /**
+     * Collect less files **only** for the given module
+     *
+     * @param string $name Module name, whose less files you want to load
+     *
+     * @return $this
+     */
+    public static function collectModuleCss($name)
     {
+        $self = new self();
+        foreach ($self->app->getLibraries() as $library) {
+            foreach ($library->getCssAssets() as $lessFile) {
+                $self->lessCompiler->addLessFile($lessFile);
+            }
+        }
 
+        foreach (self::$lessFiles as $lessFile) {
+            $self->lessCompiler->addLessFile($self->pubPath . '/' . $lessFile);
+        }
+
+        $mm = $self->app->getModuleManager();
+        foreach ($mm->getLoadedModules() as $moduleName => $module) {
+            if ($moduleName !== $name) {
+                continue;
+            }
+
+            if ($module->hasCss()) {
+                foreach ($module->getCssFiles() as $lessFilePath) {
+                    $self->lessCompiler->addModuleLessFile($moduleName, $lessFilePath);
+                }
+            }
+
+            if ($module->requiresCss()) {
+                foreach ($module->getCssRequires() as $lessFilePath) {
+                    $self->lessCompiler->addModuleRequire($moduleName, $lessFilePath);
+                }
+            }
+        }
+
+        return $self;
     }
 
     /**
@@ -312,11 +359,5 @@ class StyleSheet
         }
 
         return null;
-    }
-
-    public static function getParser(Less_Environment $env = null)
-    {
-        $self = new static();
-        return $self->lessCompiler->getParser($env);
     }
 }
