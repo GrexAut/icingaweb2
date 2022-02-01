@@ -572,7 +572,7 @@ class DashboardHome extends NavigationItem
             }
 
             $pane = new Pane($dashboard->dashboard->name);
-            $pane->disable($dashboard->dashboard->dashboard_override->disabled);
+            $pane->disable((bool) $dashboard->dashboard->dashboard_override->disabled);
             $pane->fromArray([
                 'uuid'       => $dashboard->dashboard_id,
                 'title'      => $dashboard->dashboard->label,

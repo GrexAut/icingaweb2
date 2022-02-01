@@ -2,8 +2,6 @@
 
 namespace Icinga\Model;
 
-use Icinga\Module\Icingadb\Model\Behavior\BoolCast;
-use ipl\Orm\Behaviors;
 use ipl\Orm\Model;
 use ipl\Orm\Relations;
 use ipl\Sql\Expression;
@@ -33,7 +31,7 @@ class DashboardOverride extends Model
 
     public function getMetaData()
     {
-        return ['priority' => t('Dashboard Order Priority')];
+        return ['priority' => t('Dashboard Priority Order')];
     }
 
     public function getSearchColumns()
@@ -44,11 +42,6 @@ class DashboardOverride extends Model
     public function getDefaultSort()
     {
         return 'dashboard.name';
-    }
-
-    public function createBehaviors(Behaviors $behaviors)
-    {
-        $behaviors->add(new BoolCast(['disabled']));
     }
 
     public function createRelations(Relations $relations)
