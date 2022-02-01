@@ -3,16 +3,24 @@
 
 namespace Icinga\Web\Widget\Dashboard;
 
-use Icinga\Data\ConfigObject;
-use Icinga\Web\Widget\AbstractWidget;
+use Icinga\Common\DataExtractor;
+use Icinga\Web\Navigation\DashboardHome;
 use Icinga\Exception\ProgrammingError;
 use Icinga\Exception\ConfigurationError;
+use Icinga\Web\Widget\Dashboard;
+use ipl\Web\Url;
 
 /**
  * A pane, displaying different Dashboard dashlets
  */
-class Pane extends UserWidget
+class Pane implements OverridingWidget
 {
+    use DisableWidget;
+    use OrderWidget;
+    use DataExtractor;
+
+    const TABLE = 'dashboard';
+
     /**
      * The name of this pane, as defined in the ini file
      *
@@ -32,24 +40,50 @@ class Pane extends UserWidget
      *
      * @var array
      */
-    private $dashlets = array();
+    private $dashlets = [];
 
     /**
-     * Disabled flag of a pane
+     * Whether this widget overrides another widget
      *
      * @var bool
      */
-    private $disabled = false;
+    private $override;
+
+    /**
+     * Parent home of this pane
+     *
+     * @var DashboardHome
+     */
+    private $home;
+
+    /**
+     * Unique identifier of this pane
+     *
+     * @var string
+     */
+    private $uuid;
+
+    private $owner;
+
+    /**
+     * @var int
+     */
+    private $acceptance;
 
     /**
      * Create a new pane
      *
-     * @param string $name         The pane to create
+     * @param string $name       The pane to create
+     * @param array  $properties
      */
-    public function __construct($name)
+    public function __construct($name, array $properties = [])
     {
         $this->name  = $name;
         $this->title = $name;
+
+        if (! empty($properties)) {
+            $this->fromArray($properties);
+        }
     }
 
     /**
@@ -92,7 +126,110 @@ class Pane extends UserWidget
     public function setTitle($title)
     {
         $this->title = $title;
+
         return $this;
+    }
+
+    public function override(bool $override)
+    {
+        $this->override = $override;
+
+        return $this;
+    }
+
+    public function isOverriding()
+    {
+        return $this->override;
+    }
+
+    /**
+     * Set this pane's unique identifier
+     *
+     * @param string $uuid
+     *
+     * @return $this
+     */
+    public function setUuid($uuid)
+    {
+        $this->uuid = $uuid;
+
+        return $this;
+    }
+
+    /**
+     * Get this pane's unique identifier
+     *
+     * @return string
+     */
+    public function getUuid()
+    {
+        return $this->uuid;
+    }
+
+    /**
+     * Set dashboard home of this pane
+     *
+     * @param DashboardHome $home
+     *
+     * @return $this
+     */
+    public function setHome(DashboardHome $home)
+    {
+        $this->home = $home;
+
+        return $this;
+    }
+
+    /**
+     * Get the dashboard home of this pane
+     *
+     * @return DashboardHome
+     */
+    public function getHome()
+    {
+        return $this->home;
+    }
+
+    /**
+     * Set the owner of this dashboard
+     *
+     * @param string $owner
+     *
+     * @return $this
+     */
+    public function setOwner($owner)
+    {
+        $this->owner = $owner;
+
+        return $this;
+    }
+
+    /**
+     * Get owner of this dashboard
+     *
+     * @return string
+     */
+    public function getOwner()
+    {
+        return $this->owner;
+    }
+
+    /**
+     * @param int $acceptance
+     */
+    public function setAcceptance($acceptance)
+    {
+        $this->acceptance = $acceptance;
+
+        return $this;
+    }
+
+    /**
+     * @return int
+     */
+    public function getAcceptance()
+    {
+        return $this->acceptance;
     }
 
     /**
@@ -130,74 +267,82 @@ class Pane extends UserWidget
         if ($this->hasDashlet($title)) {
             return $this->dashlets[$title];
         }
-        throw new ProgrammingError(
-            'Trying to access invalid dashlet: %s',
-            $title
-        );
+
+        throw new ProgrammingError('Trying to access invalid dashlet: %s', $title);
     }
 
     /**
-     * Removes the dashlet with the given title if it exists in this pane
+     * Remove the dashlet the given dashlet if it exists in this pane
      *
-     * @param string $title         The pane
-     * @return Pane $this
+     * @param Dashlet|string $dashlet
+     *
+     * @return $this
      */
-    public function removeDashlet($title)
+    public function removeDashlet($dashlet)
     {
-        if ($this->hasDashlet($title)) {
-            $dashlet = $this->getDashlet($title);
-            if ($dashlet->isUserWidget() === true) {
-                unset($this->dashlets[$title]);
-            } else {
-                $dashlet->setDisabled(true);
-                $dashlet->setUserWidget();
-            }
-        } else {
-            throw new ProgrammingError('Dashlet does not exist: ' . $title);
+        $name = $dashlet instanceof Dashlet ? $dashlet->getName() : $dashlet;
+        if (! $this->hasDashlet($name)) {
+            throw new ProgrammingError('Trying to remove invalid dashlet: %s', $name);
         }
+
+        if (! $dashlet instanceof Dashlet) {
+            $dashlet = $this->getDashlet($dashlet);
+        }
+
+        DashboardHome::getConn()->delete(Dashlet::TABLE, [
+            'id = ?'            => $dashlet->getUuid(),
+            'dashboard_id = ?'  => $this->getUuid()
+        ]);
+
         return $this;
     }
 
     /**
      * Removes all or a given list of dashlets from this pane
      *
-     * @param array $dashlets Optional list of dashlet titles
-     * @return Pane $this
+     * @param array $dashlets Optional list of dashlets
+     *
+     * @return $this
      */
-    public function removeDashlets(array $dashlets = null)
+    public function removeDashlets(array $dashlets = [])
     {
-        if ($dashlets === null) {
-            $this->dashlets = array();
-        } else {
-            foreach ($dashlets as $dashlet) {
-                $this->removeDashlet($dashlet);
-            }
+        if (empty($dashlets)) {
+            $dashlets = $this->getDashlets();
         }
+
+        foreach ($dashlets as $dashlet) {
+            $this->removeDashlet($dashlet);
+        }
+
         return $this;
     }
 
     /**
-     * Return all dashlets added at this pane
+     * Get all dashlets belongs to this pane
      *
-     * @return array
+     * @return Dashlet[]
      */
     public function getDashlets()
     {
+        uasort($this->dashlets, function (Dashlet $x, Dashlet $y) {
+            return $y->getPriority() - $x->getPriority();
+        });
+
         return $this->dashlets;
     }
 
     /**
-     * @see Widget::render
+     * Set dashlets of this pane
+     *
+     * @param Dashlet[] $dashlets
+     *
+     * @return $this
      */
-    public function render()
+    public function setDashlets(array $dashlets)
     {
-        $dashlets = array_filter(
-            $this->dashlets,
-            function ($e) {
-                return ! $e->getDisabled();
-            }
-        );
-        return implode("\n", $dashlets) . "\n";
+        $this->dashlets = $dashlets;
+
+        return $this;
     }
 
     /**
@@ -212,15 +357,15 @@ class Pane extends UserWidget
     {
         $dashlet = new Dashlet($title, $url, $this);
         $this->addDashlet($dashlet);
+
         return $dashlet;
     }
 
     /**
      * Add a dashlet to this pane, optionally creating it if $dashlet is a string
      *
-     * @param string|Dashlet $dashlet               The dashlet object or title
-     *                                                  (if a new dashlet will be created)
-     * @param string|null $url                          An Url to be used when dashlet is a string
+     * @param string|Dashlet $dashlet
+     * @param ?string $url
      *
      * @return $this
      * @throws \Icinga\Exception\ConfigurationError
@@ -234,6 +379,7 @@ class Pane extends UserWidget
         } else {
             throw new ConfigurationError('Invalid dashlet added: %s', $dashlet);
         }
+
         return $this;
     }
 
@@ -263,73 +409,78 @@ class Pane extends UserWidget
     }
 
     /**
-     * Add a dashlet to the current pane
+     * Add a dashlet to the current pane @see addDashlet()
      *
-     * @param $title
-     * @param $url
-     * @return Dashlet
+     * @param string     $title
+     * @param Url|string $url
      *
-     * @see addDashlet()
+     * @return $this
      */
-    public function add($title, $url = null)
+    public function add($title, $url, $priority = 0)
     {
-        $this->addDashlet($title, $url);
+        $dashlet = $this->createDashlet($title, $url);
+        $dashlet->setPriority($priority);
+        $this->addDashlet($dashlet);
 
-        return $this->dashlets[$title];
+        return $this;
     }
 
     /**
-     * Return the this pane's structure as array
+     * Manage the given dashlet(s)
      *
-     * @return  array
+     * If you want to move the dashlet(s) from another to this pane, you have to also bypass the origin pane
+     *
+     * @param Dashlet|Dashlet[] $dashletOrDashlets
+     * @param ?Pane             $origin
+     *
+     * @return $this
      */
+    public function manageDashlets($dashletOrDashlets, Pane $origin = null)
+    {
+        if (! is_array($dashletOrDashlets)) {
+            $dashletOrDashlets = [$dashletOrDashlets];
+        }
+
+        $user = Dashboard::getUser();
+        $conn = DashboardHome::getConn();
+        foreach ($dashletOrDashlets as $dashlet) {
+            $identifier = DashboardHome::getSHA1(
+                $user->getUsername() . $this->getHome()->getName() . $this->getName() . $dashlet->getName()
+            );
+            if (! $this->hasDashlet($dashlet->getName()) && (! $origin || ! $origin->hasDashlet($dashlet->getName()))) {
+                $conn->insert(Dashlet::TABLE, [
+                    'id'            => $identifier,
+                    'dashboard_id'  => $this->getUuid(),
+                    'name'          => $dashlet->getName(),
+                    'label'         => $dashlet->getTitle(),
+                    'url'           => $dashlet->getUrl()->getRelativeUrl(),
+                    'priority'      => $dashlet->getPriority()
+                ]);
+
+                $dashlet->setUuid($identifier);
+            } else {
+                $conn->update(Dashlet::TABLE, [
+                    'id'            => $identifier,
+                    'dashboard_id'  => $this->getUuid(),
+                    'label'         => $dashlet->getTitle(),
+                    'url'           => $dashlet->getUrl()->getRelativeUrl(),
+                    'priority'      => $this->getPriority()
+                ], ['id = ?' => $dashlet->getUuid()]);
+            }
+        }
+
+        return $this;
+    }
+
     public function toArray()
     {
-        $pane =  array(
-            'title'     => $this->getTitle(),
-        );
-
-        if ($this->getDisabled() === true) {
-            $pane['disabled'] = 1;
-        }
-
-        return $pane;
-    }
-
-    /**
-     * Create a new pane with the title $title from the given configuration
-     *
-     * @param $title                The title for this pane
-     * @param ConfigObject  $config The configuration to use for setup
-     *
-     * @return Pane
-     */
-    public static function fromIni($title, ConfigObject $config)
-    {
-        $pane = new Pane($title);
-        if ($config->get('title', false)) {
-            $pane->setTitle($config->get('title'));
-        }
-        return $pane;
-    }
-
-    /**
-     * Setter for disabled
-     *
-     * @param boolean $disabled
-     */
-    public function setDisabled($disabled = true)
-    {
-        $this->disabled = (bool) $disabled;
-    }
-
-    /**
-     * Getter for disabled
-     *
-     * @return boolean
-     */
-    public function getDisabled()
-    {
-        return $this->disabled;
+        return [
+            'id'        => $this->getUuid(),
+            'home'      => $this->getHome() ? $this->getHome()->getName() : null,
+            'name'      => $this->getName(),
+            'label'     => $this->getTitle(),
+            'priority'  => $this->getPriority(),
+            'disabled'  => (int) $this->isDisabled()
+        ];
     }
 }

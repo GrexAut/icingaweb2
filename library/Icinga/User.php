@@ -312,6 +312,20 @@ class User
     }
 
     /**
+     * Get whether the given role is part of the assigned role of this user
+     *
+     * @param Role|string $role
+     *
+     * @return bool
+     */
+    public function hasAssignedRole($role)
+    {
+        $role = $role instanceof Role ? $role->getName() : $role;
+
+        return in_array($role, $this->getAdditional('assigned_roles'), true);
+    }
+
+    /**
      * Getter for username
      *
      * @return  string
